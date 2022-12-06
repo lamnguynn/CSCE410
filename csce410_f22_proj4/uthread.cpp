@@ -80,7 +80,7 @@ void* handler(void* arg) {
 				//printf("Before: %lu \n", (unsigned long)&t->stack );
 
 				__asm__ __volatile__(
-                			// Inline assembly code to switch to the target user stack 
+                			// Inline assembly code to switch to the target user stack. In Intel syntax 
 					"mov %%rbp, %0\n"
 					"mov %%rsp, %1\n"	
 					:
