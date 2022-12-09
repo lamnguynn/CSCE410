@@ -7,62 +7,57 @@
 #include <unistd.h>
 #include "uthread.h"
 
-void thread1(void* arg)
+
+
+
+/**
+ **************** THREAD FUNCTIONS ****************
+ */
+
+void thread(void* arg)
 {
     for (int i = 0; i < 10; i++) {
-        printf("This is thread 1\n");
+        printf("This is thread %lu\n", (unsigned long) arg);
         usleep(1000);
     }
     uthread_exit();
 }
 
-void thread2(void* arg)
-{
-    for (int i = 0; i < 10; i++) {
-        printf("This is thread 2\n");
+void bar (void* arg) {
+    uthread_set_param((unsigned long)arg);
+    for (size_t i = 0; i < 10; ++i) {
         usleep(1000);
+	printf("This is thread %lu\n", (unsigned long)arg );
+        uthread_yield();
     }
+    printf("Thread %lu done.\n", (unsigned long)arg);
     uthread_exit();
 }
 
-void thread3(void* arg)
-{
-    for (int i = 0; i < 10; i++) {
-        printf("This is thread 3\n");
-        usleep(1000);
-    }
-    uthread_exit();
+/**
+ **************** TEST FUNCTIONS ****************
+ */
+
+
+void test1() {
+    uthread_create(thread, (void*)1); 
+    uthread_create(thread, (void*)2);
+    uthread_create(thread, (void*)3);
+    uthread_create(thread, (void*)4);
 }
 
-void thread4(void* arg)
-{
-    for (int i = 0; i < 10; i++) {
-        printf("This is thread 4\n");
-        usleep(1000);
+void test2() {
+    for (size_t i = 69; i < 70; i++) {
+      uthread_create(bar, (void*)i);
     }
-    //uthread_exit();
 }
-
-void thread5(void* arg)
-{
-    for (int i = 0; i < 10; i++) {
-        printf("This is thread 5\n");
-        usleep(1000);
-    }
-    uthread_exit();
-}
-
 
 int main(int argc, const char** argv)
 {
-    printf("RUNNING THREADS..... \n");
-    uthread_init();
-    uthread_create(thread1, NULL);
-    uthread_create(thread2, NULL);
-    uthread_create(thread3, NULL);
-    uthread_create(thread4, NULL);
-    uthread_create(thread5, NULL);
-	
-    uthread_cleanup();
-    return 0;
+    	printf("RUNNING THREADS..... \n");
+    	uthread_init();
+	test2();
+    	uthread_cleanup();
+
+    	return 0;
 }
