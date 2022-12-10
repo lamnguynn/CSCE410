@@ -44,16 +44,16 @@ void test1() {
 }
 
 void test2() {
-    for (size_t i = 69; i < 70; i++) {
+    for (size_t i = 1; i < 4; i++) {
       uthread_create(bar, (void*)i);
     }
 }
 
 int main(int argc, const char** argv)
 {
-    	printf("RUNNING THREADS..... \n");
-    	uthread_init();
-	test2();
+//	uthread_set_policy(UTHREAD_DIRECT_PTHREAD);
+	uthread_init();
+	test1();
     	uthread_cleanup();
 
     	return 0;

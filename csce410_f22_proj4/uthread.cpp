@@ -224,10 +224,12 @@ void uthread_init(void)
 	}
 
 	//Create our four kernel threads
-	pthread_create(&t1, NULL, handler, NULL);
-	pthread_create(&t2, NULL, handler, NULL);
-	pthread_create(&t3, NULL, handler, NULL);
-	pthread_create(&t4, NULL, handler, NULL);
+	if(POLICY == UTHREAD_PRIORITY) {
+		pthread_create(&t1, NULL, handler, NULL);
+		pthread_create(&t2, NULL, handler, NULL);
+		pthread_create(&t3, NULL, handler, NULL);
+		pthread_create(&t4, NULL, handler, NULL);
+	}
 }
 
 void uthread_create(void (*func) (void*), void* arg)
@@ -246,10 +248,14 @@ void uthread_create(void (*func) (void*), void* arg)
 	ut->running = false;
 
 	// Add to queue with a lock
-	pthread_mutex_lock(&queue_lock);
-	ready_queue.push_front(ut);
-	num_threads+=1;	
-	pthread_mutex_unlock(&queue_lock);
+	if(POLICY == UTHREAD_DIRECT_PTHREAD) {
+		pthread_create(&t1, NULL, ut->func, ut->arg);
+			 	
+	}
+	else {	
+		ready_queue.push_front(ut);
+		num_threads+=1;	
+	}
 }
 
 void uthread_exit(void)
