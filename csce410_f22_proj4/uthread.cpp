@@ -13,10 +13,12 @@ std::list<uthread_t*> ready_queue;
 
 enum uthread_policy POLICY = UTHREAD_DIRECT_PTHREAD;
 
+int num_threads_exited = 0;
 int num_threads = 0;
 unsigned long long rip;
 __thread uthread_t* current_uthread;
 pthread_mutex_t queue_lock;
+pthread_mutex_t texited_lock;
 pthread_cond_t cond;
 pthread_t t1;
 pthread_t t2;
@@ -47,57 +49,71 @@ uthread_t* find_lowest_priority_thread() {
 	return lowest_pri_thread;
 }
 
+void print_registers(uthread_t* t) {
+	printf("RBX %lu | RCX %lu | RDX %lu | RDI %lu | RSI %lu \n", t->reg.rbx, t->reg.rcx, t->reg.rdx, t->reg.rdi, t->reg.rsi);
+	printf("RBP %lu | RSP %lu\n", t->reg.rbp, t->reg.rsp);
+}
+
+
 void* handler(void* arg) {
         while(true) {
 		if ( !ready_queue.empty() ) {
 			pthread_mutex_lock(&queue_lock);	
-                       	__asm__ __volatile__ (
+
+			/* Prevents hanging when all pthreads have exited */			
+			if(num_threads_exited == 4) {
+				break;
+			}
+					
+			/* Save the current register values using assembly code. */
+	        	if( current_uthread ) {
+				printf("Saving current register values ID: %lu\n", (unsigned long) current_uthread->id);
+			
+				__asm__ __volatile__ (
+        	    			// Inline assembly code to save the current register values 
+					"mov %%rbx, %0\n"
+                                        "mov %%rcx, %1\n"
+                                        "mov %%rdx, %2\n"
+                                        "mov %%rsi, %3\n"
+                                        "mov %%rdi, %4\n"
+                                        "mov %%rbp, %5\n"
+                                        "mov %%rsp, %6\n"
+                                        "mov %%r8, %7\n"
+                                        "mov %%r9, %8\n"
+                                        "mov %%r10, %9\n"
+                                        "mov %%r11, %10\n"
+                                        "mov %%r12, %11\n"
+                                        "mov %%r13, %12\n"
+                                        "mov %%r14, %13\n"
+
+                                        :"=r" (current_uthread->reg.rbx),
+                                        "=r"(current_uthread->reg.rcx),
+                                        "=r"(current_uthread->reg.rdx),
+                                        "=r"(current_uthread->reg.rsi),
+                                        "=r"(current_uthread->reg.rdi),
+                                        "=r"(current_uthread->reg.rbp),
+                                        "=r"(current_uthread->reg.rsp),
+                                        "=r"(current_uthread->reg.r8),
+                                        "=r"(current_uthread->reg.r9),
+                                        "=r"(current_uthread->reg.r10),
+                                        "=r"(current_uthread->reg.r11),
+                                        "=r"(current_uthread->reg.r12),
+                                        "=r"(current_uthread->reg.r13),
+                                        "=r"(current_uthread->reg.r14)
+                                        :
+				);
+
+				printf("Finished saving current regsiter values...\n");
+			}
+
+			__asm__ __volatile__ (
                                 "lea (%%rip), %%rax\n"
                                 "mov %%rax, %0\n"
                                 :"=r"(rip)
                                 :
                                 :"rax"
                         );
-			
-			/* Save the current register values using assembly code. */
-	        	if( current_uthread ) {
-				printf("Saving current register values ID: %lu\n", (unsigned long) current_uthread->id);
-				__asm__ __volatile__ (
-        	    			// Inline assembly code to save the current register values 
-					"mov %%rbx, %0\n"
-					"mov %%rcx, %1\n"
-					"mov %%rdx, %2\n"
-					"mov %%rsi, %3\n"
-					"mov %%rdi, %4\n"
-					"mov %%rbp, %5\n"
-					"mov %%rsp, %6\n"
-					"mov %%r8, %7\n"
-					"mov %%r9, %8\n"
-					"mov %%r10, %9\n"
-					"mov %%r11, %10\n"
-					"mov %%r12, %11\n"
-					"mov %%r13, %12\n"
-					"mov %%r14, %13\n"
-	
-					:"=r" (current_uthread->reg.rbx),
-					"=r"(current_uthread->reg.rcx),
-					"=r"(current_uthread->reg.rdx),
-					"=r"(current_uthread->reg.rsi),
-					"=r"(current_uthread->reg.rdi),
-					"=r"(current_uthread->reg.rbp),
-					"=r"(current_uthread->reg.rsp),
-					"=r"(current_uthread->reg.r8),
-					"=r"(current_uthread->reg.r9),
-					"=r"(current_uthread->reg.r10),
-					"=r"(current_uthread->reg.r11),
-					"=r"(current_uthread->reg.r12),
-               	 			"=r"(current_uthread->reg.r13),
-               		 		"=r"(current_uthread->reg.r14)
-					:
-				);
 
-				printf("Finished saving current regsiter values...\n");
-			}
 		
 			// Select a user-space thread from the ready queue 
 			uthread_t* t = find_lowest_priority_thread();
@@ -105,21 +121,41 @@ void* handler(void* arg) {
 
                 	// Run the task of the user-space thread
 			if( !t->running ) {
+			    	 pthread_mutex_unlock(&queue_lock);
+				 t->running = true;
+				
+				unsigned long rsp = 0;
+				unsigned long rbp = 0;
 				
 				__asm__ __volatile__(
-                			// Inline assembly code to switch to the target user stack. In Intel syntax 
-					"mov %%rbp, %0\n"
-					"mov %%rsp, %0\n"	
+					"mov %%rsp, %0\n"
+					"mov %%rbp, %1\n"
+					: "=r"(rsp), "=r"(rbp)
+				);
+				
+				__asm__ __volatile__(
+                			// Inline assembly code to switch to the target user stack. 
+					"mov %0, %%rbp\n"
+					"mov %0, %%rsp\n"
+					"mov %1, %%rax\n"
+					"mov %2, %%rdi\n"
+					"call *%%rax\n"	
+					
+					// Inline assembly to reset the rsp and rbp registers
+					"mov %3, %%rbp\n"
+					"mov %4, %%rsp\n"
 					:
 					:"r" ((unsigned long)&t->stack + 4096)
+					,"r" (t->func), "r"(t->arg), "r"(rbp + 1), "r"(rsp)
 					:"memory"
 				);
-			
-				t->running = true;
 			}
 			else {
-				__asm__ __volatile__(
-					//Inline assembly code to switch to the target context
+      				 printf("Switching to target context.....\n");
+				 pthread_mutex_unlock(&queue_lock);		
+			
+				 __asm__ __volatile__(
+					// Inline assembly code to switch to the target context
 					"mov %0, %%rbx\n"
 					"mov %1, %%rcx\n"
 					"mov %2, %%rdx\n"
@@ -134,8 +170,7 @@ void* handler(void* arg) {
                 			"mov %11, %%r12\n"
                 			"mov %12, %%r13\n"
                 			"mov %13, %%r14\n"
-
-                			:
+					:
         			        :"r" (t->reg.rbx),
                 			"r" (t->reg.rcx),
                 			"r" (t->reg.rdx),
@@ -152,12 +187,17 @@ void* handler(void* arg) {
 					"r" (t->reg.r14)
 					: "memory"
 				);
-			}
 			
-			pthread_mutex_unlock(&queue_lock);
-									
-			printf("Running function.....%lu | ARG: %lu\n", (unsigned long)&t->func, (unsigned long)t->arg );	
-			t->func(t->arg);		
+				__asm__ __volatile__(
+                                        // Inline assembly to call the function for a uthread
+					"mov %0, %%rax\n"
+                                        "mov %1, %%rdi\n"
+                                        "call *%%rax\n"
+                                        :
+                                        :"r" (t->func), "r"(t->arg)
+                                        :"memory"
+				);
+			}
 		}
         }
 
@@ -175,7 +215,11 @@ void uthread_init(void)
 		return;
 	}
 	if (pthread_cond_init(&cond, NULL)) {
-		printf("pthread_cond_init failed for queue_lock");
+		printf("pthread_cond_init failed for cond");
+		return;
+	}
+	if (pthread_mutex_init(&texited_lock, NULL)) {
+		printf("pthread_mutex_init failed for texited_lock");
 		return;
 	}
 
@@ -210,6 +254,10 @@ void uthread_create(void (*func) (void*), void* arg)
 
 void uthread_exit(void)
 {
+	pthread_mutex_lock(&texited_lock);
+	num_threads_exited += 1;
+	pthread_mutex_unlock(&texited_lock);
+
 	pthread_exit(NULL);
 }
 
@@ -217,6 +265,41 @@ void uthread_yield(void)
 {
 	pthread_mutex_lock(&queue_lock);
 	ready_queue.push_front(current_uthread);
+	
+	/* Save the current register values using assembly code. */	
+	__asm__ __volatile__ (
+		"mov %%rbx, %0\n"
+		"mov %%rcx, %1\n"
+		"mov %%rdx, %2\n"
+		"mov %%rsi, %3\n"
+		"mov %%rdi, %4\n"
+		"mov %%rbp, %5\n"
+		"mov %%rsp, %6\n"
+		"mov %%r8, %7\n"
+		"mov %%r9, %8\n"
+		"mov %%r10, %9\n"
+		"mov %%r11, %10\n"
+		"mov %%r12, %11\n"
+		"mov %%r13, %12\n"
+		"mov %%r14, %13\n"
+
+		:
+		"=r"(current_uthread->reg.rbx),
+		"=r"(current_uthread->reg.rcx),
+		"=r"(current_uthread->reg.rdx),
+		"=r"(current_uthread->reg.rsi),
+		"=r"(current_uthread->reg.rdi),
+		"=r"(current_uthread->reg.rbp),
+		"=r"(current_uthread->reg.rsp),
+		"=r"(current_uthread->reg.r8),
+		"=r"(current_uthread->reg.r9),
+		"=r"(current_uthread->reg.r10),
+		"=r"(current_uthread->reg.r11),
+		"=r"(current_uthread->reg.r12),
+		"=r"(current_uthread->reg.r13),
+		"=r"(current_uthread->reg.r14)
+		:
+	);
 
 	/* Switch to the previously saved context of the scheduler */
 	__asm__ __volatile__(
