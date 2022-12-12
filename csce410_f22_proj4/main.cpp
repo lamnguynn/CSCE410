@@ -51,9 +51,9 @@ void test2() {
 
 int main(int argc, const char** argv)
 {
-//	uthread_set_policy(UTHREAD_DIRECT_PTHREAD);
+	uthread_set_policy(UTHREAD_PRIORITY);
 	uthread_init();
-	test1();
+	test2();
     	uthread_cleanup();
 
     	return 0;
