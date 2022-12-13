@@ -60,144 +60,144 @@ uthread_t* find_lowest_priority_thread() {
 }
 
 void* handler(void* arg) {
-        while(true) {
-			if ( !ready_queue.empty() ) {
+	while(true) {
+		if ( !ready_queue.empty() ) {
+			
+			/* Save the current register values using assembly code. */
+			__asm__ __volatile__ (
+				"mov %%rbx, 8(%0)\n"
+				"mov %%rcx, 16(%0)\n"
+				"mov %%rdx, 24(%0)\n"
+				"mov %%rsi, 32(%0)\n"
+				"mov %%rdi, 40(%0)\n"
+				"mov %%rsp, 48(%0)\n"
+				"mov %%rbp, 56(%0)\n"
+				"mov %%r8, 64(%0)\n"
+				"mov %%r9, 72(%0)\n"
+				"mov %%r10, 80(%0)\n"
+				"mov %%r11, 88(%0)\n"
+				"mov %%r12, 96(%0)\n"
+				"mov %%r13, 104(%0)\n"
+				"mov %%r14, 112(%0)\n"
+				"mov %%r15, 120(%0)\n"
+				:
+				: "a"(&handler_reg)
+				:
+			);
+	
+			__asm__ __volatile__ (
+					"lea 0(%%rip), %0\n"
+					:"=a"(ripH)
+			);
+
+			// Select a user-space thread from the ready queue 
+			pthread_mutex_lock(&queue_lock);
+			uthread_t* t = find_lowest_priority_thread();
+			current_uthread = t;
+
+			// Run the task of the user-space thread
+			if( !t->running ) {
+				t->running = true;
+				pthread_mutex_unlock(&queue_lock);
 				
-				/* Save the current register values using assembly code. */
-				__asm__ __volatile__ (
-					"mov %%rbx, 8(%0)\n"
-					"mov %%rcx, 16(%0)\n"
-					"mov %%rdx, 24(%0)\n"
-					"mov %%rsi, 32(%0)\n"
-					"mov %%rdi, 40(%0)\n"
-					"mov %%rsp, 48(%0)\n"
-					"mov %%rbp, 56(%0)\n"
-					"mov %%r8, 64(%0)\n"
-					"mov %%r9, 72(%0)\n"
-					"mov %%r10, 80(%0)\n"
-					"mov %%r11, 88(%0)\n"
-					"mov %%r12, 96(%0)\n"
-					"mov %%r13, 104(%0)\n"
-					"mov %%r14, 112(%0)\n"
-					"mov %%r15, 120(%0)\n"
+				__asm__ __volatile__(
+					// Inline assembly code to switch to the target user stack. 
+					"mov %0, %%rsp\n"
+					"mov %0, %%rbp\n"
+					"mov %1, %%rdi\n"
+					"call *%2\n"
+
 					:
-					: "a"(&handler_reg)
-					:
-				);
-		
-				__asm__ __volatile__ (
-						"lea 0(%%rip), %0\n"
-						:"=a"(ripH)
+					:"r" ((unsigned long)t->stack + 4096)
+					,"r" (t->arg), "r"(t->func)
 				);
 
-				// Select a user-space thread from the ready queue 
-				pthread_mutex_lock(&queue_lock);
-				uthread_t* t = find_lowest_priority_thread();
-				current_uthread = t;
+				__asm__ __volatile__(
+					//Restore the register of the handler
+					"mov 8(%0), %%rbx\n"
+					"mov 16(%0), %%rcx\n"
+					"mov 24(%0), %%rdx\n"
+					"mov 32(%0), %%rsi\n"
+					"mov 40(%0), %%rdi\n"
+					"mov 48(%0), %%rbp\n"
+					"mov 56(%0), %%rsp\n"
+					"mov 64(%0), %%r8\n"
+					"mov 72(%0), %%r9\n"
+					"mov 80(%0), %%r10\n"
+					"mov 88(%0), %%r11\n"
+					"mov 96(%0), %%r12\n"
+					"mov 104(%0), %%r13\n"
+					"mov 112(%0), %%r14\n"
+					"mov 120(%0), %%r15\n"
+					:
+					:"a" (&handler_reg)
+					:
+				);
 
-				// Run the task of the user-space thread
-				if( !t->running ) {
-					t->running = true;
-					pthread_mutex_unlock(&queue_lock);
-					
-					__asm__ __volatile__(
-						// Inline assembly code to switch to the target user stack. 
-						"mov %0, %%rsp\n"
-						"mov %0, %%rbp\n"
-						"mov %1, %%rdi\n"
-						"call *%2\n"
-
-						:
-						:"r" ((unsigned long)t->stack + 4096)
-						,"r" (t->arg), "r"(t->func)
-					);
-
-					__asm__ __volatile__(
-							//Restore the register of the handler
-							"mov 8(%0), %%rbx\n"
-							"mov 16(%0), %%rcx\n"
-							"mov 24(%0), %%rdx\n"
-							"mov 32(%0), %%rsi\n"
-							"mov 40(%0), %%rdi\n"
-							"mov 48(%0), %%rbp\n"
-							"mov 56(%0), %%rsp\n"
-							"mov 64(%0), %%r8\n"
-							"mov 72(%0), %%r9\n"
-							"mov 80(%0), %%r10\n"
-							"mov 88(%0), %%r11\n"
-							"mov 96(%0), %%r12\n"
-							"mov 104(%0), %%r13\n"
-							"mov 112(%0), %%r14\n"
-							"mov 120(%0), %%r15\n"
-							:
-							:"a" (&handler_reg)
-							:
-					);
-
-					//Exit after the function returns
-				}
-				else {
-					pthread_mutex_unlock(&queue_lock);
-					
-					just_context_switched = true;
-
-					// If this is NOT the first time the uthread is running, do the context switch 
-					__asm__ __volatile__(
-						// Inline assembly code to switch to the target context
-						"mov 8(%0), %%rbx\n"
-						"mov 16(%0), %%rcx\n"
-						"mov 24(%0), %%rdx\n"
-						"mov 32(%0), %%rsi\n"
-						"mov 40(%0), %%rdi\n"
-						"mov 48(%0), %%rbp\n"
-						"mov 56(%0), %%rsp\n"
-						"mov 64(%0), %%r8\n"
-						"mov 72(%0), %%r9\n"
-						"mov 80(%0), %%r10\n"
-						"mov 88(%0), %%r11\n"
-						"mov 96(%0), %%r12\n"
-						"mov 104(%0), %%r13\n"
-						"mov 112(%0), %%r14\n"
-						"mov 120(%0), %%r15\n"
-						:
-						:"a" (&t->reg)
-						:
-					);
-					//printf("Jumping to yield() %llu\n", ripY);
-					__asm__ __volatile__(
-						"jmp *%0\n"
-						:
-						: "a"(ripY)
-						:
-					);
-				}
+				//Exit after the function returns
 			}
-        }
+			else {
+				pthread_mutex_unlock(&queue_lock);
+				
+				just_context_switched = true;
 
-        return NULL;
+				// If this is NOT the first time the uthread is running, do the context switch 
+				__asm__ __volatile__(
+					// Inline assembly code to switch to the target context
+					"mov 8(%0), %%rbx\n"
+					"mov 16(%0), %%rcx\n"
+					"mov 24(%0), %%rdx\n"
+					"mov 32(%0), %%rsi\n"
+					"mov 40(%0), %%rdi\n"
+					"mov 48(%0), %%rbp\n"
+					"mov 56(%0), %%rsp\n"
+					"mov 64(%0), %%r8\n"
+					"mov 72(%0), %%r9\n"
+					"mov 80(%0), %%r10\n"
+					"mov 88(%0), %%r11\n"
+					"mov 96(%0), %%r12\n"
+					"mov 104(%0), %%r13\n"
+					"mov 112(%0), %%r14\n"
+					"mov 120(%0), %%r15\n"
+					:
+					:"a" (&t->reg)
+					:
+				);
+				//printf("Jumping to yield() %llu\n", ripY);
+				__asm__ __volatile__(
+					"jmp *%0\n"
+					:
+					: "a"(ripY)
+					:
+				);
+			}
+		}
+	}
+
+    return NULL;
 }
 
 void uthread_yield(void) {
 	/* Save the current register values using assembly code. */	
 	__asm__ __volatile__ (
-			"mov %%rbx,  8(%0)\n"
-			"mov %%rcx, 16(%0)\n"
-			"mov %%rdx, 24(%0)\n"
-			"mov %%rsi, 32(%0)\n"
-			"mov %%rdi, 40(%0)\n"
-			"mov %%rsp, 48(%0)\n"
-			"mov %%rbp, 56(%0)\n"
-			"mov %%r8, 64(%0)\n"
-			"mov %%r9, 72(%0)\n"
-			"mov %%r10, 80(%0)\n"
-			"mov %%r11, 88(%0)\n"
-			"mov %%r12, 96(%0)\n"
-			"mov %%r13, 104(%0)\n"
-			"mov %%r14, 112(%0)\n"
-			"mov %%r15, 120(%0)\n"
-			: 
-			: "a"(&current_uthread->reg)
-			:
+		"mov %%rbx,  8(%0)\n"
+		"mov %%rcx, 16(%0)\n"
+		"mov %%rdx, 24(%0)\n"
+		"mov %%rsi, 32(%0)\n"
+		"mov %%rdi, 40(%0)\n"
+		"mov %%rsp, 48(%0)\n"
+		"mov %%rbp, 56(%0)\n"
+		"mov %%r8, 64(%0)\n"
+		"mov %%r9, 72(%0)\n"
+		"mov %%r10, 80(%0)\n"
+		"mov %%r11, 88(%0)\n"
+		"mov %%r12, 96(%0)\n"
+		"mov %%r13, 104(%0)\n"
+		"mov %%r14, 112(%0)\n"
+		"mov %%r15, 120(%0)\n"
+		: 
+		: "a"(&current_uthread->reg)
+		:
 	);
 
 	/* Add the current thread back into the queue at the front */
@@ -219,24 +219,24 @@ void uthread_yield(void) {
 	/* Switch to the previously saved context of the scheduler */
 	__asm__ __volatile__(
 		// Inline assembly code to switch to the target context of handler
-			"mov 8(%0), %%rbx\n"
-			"mov 16(%0), %%rcx\n"
-			"mov 24(%0), %%rdx\n"
-			"mov 32(%0), %%rsi\n"
-			"mov 40(%0), %%rdi\n"
-			"mov 48(%0), %%rbp\n"
-			"mov 56(%0), %%rsp\n"
-			"mov 64(%0), %%r8\n"
-			"mov 72(%0), %%r9\n"
-			"mov 80(%0), %%r10\n"
-			"mov 88(%0), %%r11\n"
-			"mov 96(%0), %%r12\n"
-			"mov 104(%0), %%r13\n"
-			"mov 112(%0), %%r14\n"
-			"mov 120(%0), %%r15\n"
-			:
-			:"a" (&handler_reg)
-			:
+		"mov 8(%0), %%rbx\n"
+		"mov 16(%0), %%rcx\n"
+		"mov 24(%0), %%rdx\n"
+		"mov 32(%0), %%rsi\n"
+		"mov 40(%0), %%rdi\n"
+		"mov 48(%0), %%rbp\n"
+		"mov 56(%0), %%rsp\n"
+		"mov 64(%0), %%r8\n"
+		"mov 72(%0), %%r9\n"
+		"mov 80(%0), %%r10\n"
+		"mov 88(%0), %%r11\n"
+		"mov 96(%0), %%r12\n"
+		"mov 104(%0), %%r13\n"
+		"mov 112(%0), %%r14\n"
+		"mov 120(%0), %%r15\n"
+		:
+		:"a" (&handler_reg)
+		:
 	);
 
 	__asm__ __volatile__(
