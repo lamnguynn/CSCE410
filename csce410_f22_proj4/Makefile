@@ -1,4 +1,5 @@
 LDFLAGS += -pthread
+CXXFLAGS = -g
 LINK.o = $(LINK.cpp)
 uthread: uthread.o main.o
 uthread.o: uthread.h

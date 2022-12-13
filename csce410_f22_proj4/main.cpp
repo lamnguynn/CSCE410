@@ -24,7 +24,7 @@ void bar (void* arg) {
     uthread_set_param((unsigned long)arg);
     for (size_t i = 0; i < 10; ++i) {
         usleep(1000);
-	printf("This is thread %lu at index %zu\n", (unsigned long)arg, i);
+	printf("This is thread %lu\n", (unsigned long)arg);
         uthread_yield();
     }
     printf("Thread %lu done.\n", (unsigned long)arg);
@@ -54,7 +54,7 @@ int main(int argc, const char** argv)
 	uthread_set_policy(UTHREAD_PRIORITY);
 	uthread_init();
 	test2();
-    	uthread_cleanup();
+    uthread_cleanup();
 
     	return 0;
 }

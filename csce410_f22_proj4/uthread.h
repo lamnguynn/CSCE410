@@ -6,14 +6,22 @@ struct registers {
 	unsigned long long rip;
 };
 
+enum STATE {
+	READY = 0,
+	RUNNING,
+	DONE
+
+};
+
 typedef struct {
-        void *(*func)(void *);
+    void *(*func)(void *);
 	void * arg;
 	void * stack;
 	registers reg;
 	int id;
 	int priority;
 	bool running;	
+	enum STATE state;
 } uthread_t;
 
 void uthread_init(void);
