@@ -202,7 +202,7 @@ void uthread_yield(void) {
 
 	/* Add the current thread back into the queue at the front */
 	pthread_mutex_lock(&queue_lock);
-	ready_queue.push_front(current_uthread);
+	ready_queue.push_back(current_uthread);
 	pthread_mutex_unlock(&queue_lock);
 
 	/* Prevent infinite loop */
@@ -298,7 +298,7 @@ void uthread_create(void (*func) (void*), void* arg) {
 			 	
 	}
 	else {	
-		ready_queue.push_front(ut);
+		ready_queue.push_back(ut);
 		num_threads+=1;	
 	}
 }
